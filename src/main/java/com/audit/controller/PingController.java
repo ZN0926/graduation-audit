@@ -28,8 +28,13 @@ import java.util.Map;
  *       "服务没起来"是两种故障，用 HTTP 状态码区分不出来，用 body 才能区分。</li>
  * </ul>
  *
- * 【历史】块 2 验收期间这里临时挂过一个 {@code GET /api/llm-test}，用于验证模型通道；
- * 2026-11-08 验证通过后已按计划删除，模型调用现在统一由块 4 / 块 5 的业务接口触发。
+ * 【历史】
+ * <ul>
+ *   <li>块 2 验收期间这里临时挂过 {@code GET /api/llm-test}，验证模型通道后已删除；</li>
+ *   <li>块 3 验收期间临时挂过 {@code GET /api/parse-test}（输入文件路径 → 输出切片行号），
+ *       2026-11-08 验证通过后已删除。切片能力现在由 {@code CodeParseService} 提供，
+ *       真正的入口是块 5 的上传接口。</li>
+ * </ul>
  */
 @RestController
 @RequestMapping("/api")
