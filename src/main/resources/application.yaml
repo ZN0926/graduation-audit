@@ -1,3 +1,36 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: graduation-audit
+
+  datasource:
+    url: 'jdbc:mysql://127.0.0.1:3306/audit_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true'
+    username: audit
+    password: Audit@2026
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+# 大模型配置：key 不写明文，从环境变量 LLM_API_KEY 读取
+llm:
+  base-url: https://api.deepseek.com
+  api-key: ${LLM_API_KEY:}
+  model: deepseek-chat
+  timeout-seconds: 60
+
+logging:
+  level:
+    com.audit: debug
