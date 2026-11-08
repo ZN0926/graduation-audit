@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
@@ -109,15 +110,37 @@ public class LlmService {
                     throw new IllegalStateException("模型返回空内容，检查 llm.model 是否存在：" + props.getModel());
                 }
                 return content;
+
+            } catch (RestClientResponseException e) {
+                // 服务端明确回了 4xx/5xx：把状态码和响应体原文打出来——模型名写错、key 无效都在这里能看见
+                String detail = "HTTP " + e.getStatusCode().value() + "：" + abbreviate(e.getResponseBodyAsString());
+                log.warn("LLM 调用失败，第 {}/{} 次：{}", attempt, MAX_ATTEMPTS, detail);
+                lastError = new IllegalStateException(detail, e);
+                // 4xx 是"请求本身不对"（key 错、模型名不存在、余额不足），重试多少次都一样，直接失败
+                if (e.getStatusCode().is4xxClientError()) {
+                    throw (IllegalStateException) lastError;
+                }
+
             } catch (Exception e) {
+                // 网络层（连不上、超时、SSL）：值得重试一次
                 lastError = e;
                 log.warn("LLM 调用失败，第 {}/{} 次：{}", attempt, MAX_ATTEMPTS, e.getMessage());
-                if (attempt < MAX_ATTEMPTS) {
-                    sleep(RETRY_BACKOFF_MS);
-                }
+            }
+
+            if (attempt < MAX_ATTEMPTS) {
+                sleep(RETRY_BACKOFF_MS);
             }
         }
         throw new IllegalStateException("LLM 调用失败：" + (lastError == null ? "unknown" : lastError.getMessage()), lastError);
+    }
+
+    /** 响应体可能很长（含整段 HTML 报错页），日志里只留前 300 字 */
+    private String abbreviate(String s) {
+        if (s == null) {
+            return "";
+        }
+        String oneLine = s.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= 300 ? oneLine : oneLine.substring(0, 300) + "…";
     }
 
     /** 期望返回 JSON 数组（规则蒸馏用） */
