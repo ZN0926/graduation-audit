@@ -34,6 +34,13 @@ llm:
   model: deepseek-v4.1-flash
   timeout-seconds: 60
 
+# actuator 只暴露 health：/actuator/health 能看存活与数据源状态，其余端点（env/beans 等）一律不开
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
 logging:
   level:
     com.audit: debug
