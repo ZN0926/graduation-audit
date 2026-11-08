@@ -1,8 +1,13 @@
 package com.audit.repository;
 
+import com.audit.model.Report;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
 /**
  * Report 的持久层。
- * <p>TODO(M1)：继承 JpaRepository&lt;Report, Long&gt;，并补充查询方法。
  */
-public interface ReportRepository {
+public interface ReportRepository extends JpaRepository<Report, Long> {
+    Optional<Report> findByTaskId(Long taskId);
 }
