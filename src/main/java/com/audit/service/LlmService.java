@@ -13,10 +13,54 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 大模型调用的唯一出口。上层（蒸馏/审计/复核）都只调 chat(system, user)，
- * 换句话说：整个工程里只有这一个类持有 RestClient。
- * <p>temperature 固定 0——审计要的是稳定复现，不是多样性；同输入两次结果不同的话，
- * 误报归因就没法做，论文里的数字也就不成立。
+ * 【这是什么】整个系统唯一的"模型出口"。全工程只有这一个类会发 HTTP 请求给大模型；
+ * 蒸馏（块4）、审计（块5）、复核（块6）都只是给它两段文字，拿回一段文字。
+ *
+ * 【它做的事，一句话】
+ * <pre>
+ * 输入：一段 system 提示词（定角色/定输出格式）+ 一段 user 提示词（放要处理的内容）
+ * 输出：模型回复的纯文本（原样返回，不清洗 JSON 围栏——清洗是 JsonUtil 的事）
+ * </pre>
+ *
+ * 【一次真实调用长什么样】
+ * <pre>
+ * 调用：chat("你是代码安全审计专家，只输出 JSON。", "判定这段代码有没有 SQL 注入：…")
+ * 实际发出的 HTTP：
+ *   POST https://api.deepseek.com/v1/chat/completions
+ *   Authorization: Bearer sk-xxx
+ *   {"model":"deepseek-chat","temperature":0,
+ *    "messages":[{"role":"system","content":"你是代码安全审计专家…"},
+ *                {"role":"user","content":"判定这段代码有没有 SQL 注入：…"}]}
+ * 拿回的 HTTP body：{"choices":[{"message":{"content":"{\"violated\":true,...}"}}], ...}
+ * 本方法返回：{"violated":true,...}   ← 只取 choices[0].message.content 这一层
+ * </pre>
+ *
+ * 【内部按顺序做的 5 件事】
+ * <ol>
+ *   <li>检查 apiKey 是否为空——为空立刻抛异常，不要发一个注定 401 的请求；</li>
+ *   <li>拼请求体：model 取配置、temperature 固定 0、messages 两条（system + user）；</li>
+ *   <li>POST /v1/chat/completions，解出 choices[0].message.content；</li>
+ *   <li>失败（网络异常 / 5xx / 返回里没有 content）就睡 1.5 秒重试，最多 2 次；</li>
+ *   <li>两次都失败，抛 IllegalStateException，把最后一次的原始错误带出去。</li>
+ * </ol>
+ *
+ * 【两个刻意的设计，答辩会被问】
+ * <ul>
+ *   <li><b>temperature 固定 0</b>：审计要的是"同样输入同样结论"。设成 0.7 的话，同一段代码两次跑出
+ *       不同判定，误报就无法归因，论文里"误报率 12%"这种数字也就不成立。</li>
+ *   <li><b>重试只做 1 次</b>：网络抖动和限流一次重试基本够；再多会让一个失败请求把整个任务拖成几分钟，
+ *       而块 5 是逐 chunk 串行调用，总耗时会被放大。</li>
+ * </ul>
+ *
+ * 【失败时会看到什么】
+ * <pre>
+ * 没配 key        → IllegalStateException: 未配置 LLM_API_KEY：请在运行配置的环境变量里设置
+ * key 错 / 余额空 → 两次 warn 日志后 IllegalStateException: LLM 调用失败：401 Unauthorized…
+ * 模型名写错      → IllegalStateException: 模型返回空内容，检查 llm.model 是否存在：xxx
+ * </pre>
+ *
+ * 【上游怎么用它】块 4 用 {@link #chatForArray} 拿规则数组；块 5 用 {@link #chatForObject} 拿判定对象。
+ * 这两个方法只是把 chat() 的结果再套一层 JsonUtil，不要在别处重复写剥围栏的代码。
  */
 @Slf4j
 @Service

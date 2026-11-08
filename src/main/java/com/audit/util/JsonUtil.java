@@ -3,8 +3,33 @@ package com.audit.util;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * JSON 清洗工具：模型返回的内容常带 ```json 围栏或前后说明文字，需要剥掉再解析。
- * <p>注意：工程是 Spring Boot 4，用的是 Jackson 3，包名是 tools.jackson 而不是 com.fasterxml.jackson。
+ * 【这是什么】"把模型说的话变成程序能解析的 JSON"的清洗工具。纯静态方法，不依赖 Spring。
+ *
+ * 【为什么需要它】我们要求模型"只输出 JSON"，但它十次里有三次会这样回：
+ * <pre>
+ * 好的，以下是你要的规则列表：
+ * ```json
+ * [{"ruleId":"JAVA-SQLI-001", "title":"SQL 注入"}]
+ * ```
+ * 希望对您有帮助。
+ * </pre>
+ * 直接丢给 JsonMapper 会抛异常，所以要先剥掉围栏和寒暄，只留中间那段。
+ *
+ * 【三个方法各自干的事】
+ * <pre>
+ * stripFence("```json\n[1,2]\n```")     → "[1,2]"               剥掉代码围栏
+ * extractArray("废话 [ {\"a\":1} ] 废话") → "[{\"a\":1}]"         取第一个 [ 到最后一个 ]
+ * extractObject("说明 {\"violated\":true} 说明") → "{\"violated\":true}"  取第一个 { 到最后一个 }
+ * </pre>
+ *
+ * 【谁用它】{@link com.audit.service.LlmService#chatForArray}、
+ * {@link com.audit.service.LlmService#chatForObject}，以及块 4 / 块 5 里真正做反序列化的地方。
+ *
+ * 【注意】这里只做"切成合法 JSON 文本"，**不做校验**。ruleId 是否在规则表里、行号是否越界，
+ * 属于块 4 / 块 5 的代码校验，不能指望这个类。
+ *
+ * 【工程细节】工程是 Spring Boot 4，用的是 Jackson 3，包名是 tools.jackson 而不是 com.fasterxml.jackson；
+ * MAPPER 做成静态常量全局复用——Jackson 的 mapper 线程安全，每次 new 反而是浪费。
  */
 public final class JsonUtil {
 

@@ -11,7 +11,28 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 健康检查。一次验证 Web 层与数据源链路是否打通；建表/配置对不上时能立即暴露。
+ * 【这是什么】健康检查接口。作用只有一个：花 3 秒钟确认"Web 层 + 数据库 + LLM 通道"三条链路通不通，
+ * 免得后面写了几百行代码才发现是数据源配错了。
+ *
+ * 【两个接口，输入 → 输出】
+ * <pre>
+ * ① GET /api/ping                （不传参数）
+ *    → {"status":"ok", "db":"connected", "time":"2026-11-08T17:05:49"}
+ *    连不上库时：{"status":"ok", "db":"failed", "error":"SQLException: Access denied…", "time":"…"}
+ *
+ * ② GET /api/llm-test            （不传参数，块 2 验收用，验收后删除）
+ *    → {"answer":"SQL 注入是指把恶意 SQL 拼进查询语句…", "time":"2026-11-08T17:12:03"}
+ *    没配 key 时：HTTP 500，日志里 IllegalStateException: 未配置 LLM_API_KEY…
+ * </pre>
+ *
+ * 【实现要点】
+ * <ul>
+ *   <li>`SELECT 1` 是最轻量的探活：不依赖任何业务表，只要能执行就说明驱动、URL、账号、密码全对；</li>
+ *   <li>数据库异常被 catch 住转成 `db:failed`，而不是让整个请求 500——"服务活着但库挂了"和
+ *       "服务没起来"是两种故障，用 HTTP 状态码区分不出来，用 body 才能区分。</li>
+ * </ul>
+ *
+ * 【块 2 验收后要做的事】删掉 {@code llmTest()} 方法以及这里对 {@code LlmService} 的注入。
  */
 @RestController
 @RequestMapping("/api")
