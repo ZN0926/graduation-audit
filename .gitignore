@@ -39,3 +39,6 @@ docs-source/
 uploads/
 
 # 前端工程已独立为 F:\毕业设计\audit-web（不在本仓库内）
+# 万一在根目录误跑 npm，也别把依赖提交进来
+node_modules/
+package-lock.json
