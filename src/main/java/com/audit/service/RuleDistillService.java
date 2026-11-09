@@ -5,6 +5,7 @@ import com.audit.model.Rule;
 import com.audit.prompt.PromptTemplates;
 import com.audit.repository.RuleRepository;
 import com.audit.util.JsonUtil;
+import com.audit.util.RuleKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -66,19 +67,23 @@ public class RuleDistillService {
     /**
      * 蒸馏一个文档。
      *
-     * @param docPath   文档路径（相对工作目录或绝对路径），必须是已转好的纯文本
-     * @param language  目标语言 java / python
-     * @param maxChunks 最多处理多少个条款块（先跑 5 个验证提示词效果，省钱）
+     * @param docPath    文档路径（相对工作目录或绝对路径），必须是已转好的纯文本
+     * @param language   目标语言 java / python
+     * @param startChunk 从第几块开始（0 起）。用来跳过前几章"命名/注释/格式"这类非安全条款，
+     *                   直接定位到「四、安全规约」，不必每次从第 1 块重跑
+     * @param maxChunks  从 startChunk 起最多处理多少块（先跑 5 个验证提示词效果，省钱）
      * @return 统计信息，直接能贴进论文
      */
-    public Map<String, Object> distill(String docPath, String language, int maxChunks) throws IOException {
+    public Map<String, Object> distill(String docPath, String language, int startChunk, int maxChunks)
+            throws IOException {
         Path path = Path.of(docPath);
         if (!Files.exists(path)) {
             throw new IllegalArgumentException("文档不存在：" + docPath);
         }
         List<DocChunk> all = docChunker.chunk(path);
-        int limit = Math.max(1, Math.min(maxChunks, all.size()));
-        List<DocChunk> todo = all.subList(0, limit);
+        int from = Math.max(0, Math.min(startChunk, Math.max(0, all.size() - 1)));
+        int to = Math.min(all.size(), from + Math.max(1, maxChunks));
+        List<DocChunk> todo = all.subList(from, to);
         String docName = path.getFileName().toString();
 
         int candidates = 0;
@@ -152,6 +157,7 @@ public class RuleDistillService {
         stats.put("doc", docName);
         stats.put("language", language);
         stats.put("chunksTotal", all.size());
+        stats.put("chunksFrom", from);
         stats.put("chunksProcessed", todo.size());
         stats.put("candidates", candidates);
         stats.put("saved", saved);
@@ -184,6 +190,7 @@ public class RuleDistillService {
         rule.setSourceDoc(docName.replaceAll("\\.(txt|md|pdf)$", ""));
         rule.setSourceRef(chunk.getClauseNo());
         rule.setRuleId(buildRuleId(language, rule.getTitle(), rule.getCwe()));
+        rule.setCanonicalKey(RuleKeys.canonicalKey(rule.getCwe(), rule.getCategory()));
         return rule;
     }
 

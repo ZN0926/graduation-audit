@@ -35,13 +35,16 @@ public class RuleController {
     /**
      * A 通道：从规范文档抽规则。
      *
-     * <p>例：{@code curl "http://localhost:8080/api/rules/distill?docPath=docs-source/java/alibaba-p3c.txt&language=java&maxChunks=5"}
+     * <p>例：{@code curl -X POST "http://localhost:8080/api/rules/distill?docPath=docs-source/java/alibaba-p3c.txt&language=java&startChunk=250&maxChunks=20"}
+     *
+     * @param startChunk 从第几块开始（0 起），用于跳过命名/格式章节、直接跑「四、安全规约」
      */
     @PostMapping("/distill")
     public Map<String, Object> distill(@RequestParam String docPath,
                                        @RequestParam String language,
+                                       @RequestParam(defaultValue = "0") int startChunk,
                                        @RequestParam(defaultValue = "5") int maxChunks) throws IOException {
-        return ruleDistillService.distill(docPath, language, maxChunks);
+        return ruleDistillService.distill(docPath, language, startChunk, maxChunks);
     }
 
     @PostMapping("/import")
@@ -65,13 +68,34 @@ public class RuleController {
         List<Rule> all = ruleRepository.findAll();
         Map<String, Long> byLanguage = new LinkedHashMap<>();
         Map<String, Long> byCategory = new LinkedHashMap<>();
+        Map<String, Long> canonicalCount = new LinkedHashMap<>();
+        Map<String, java.util.Set<String>> canonicalLang = new LinkedHashMap<>();
         for (Rule r : all) {
             byLanguage.merge(orUnknown(r.getLanguage()), 1L, Long::sum);
             byCategory.merge(orUnknown(r.getCategory()), 1L, Long::sum);
+            String key = r.getCanonicalKey() == null || r.getCanonicalKey().isBlank()
+                    ? "未归键" : r.getCanonicalKey();
+            canonicalCount.merge(key, 1L, Long::sum);
+            canonicalLang.computeIfAbsent(key, k -> new java.util.TreeSet<>()).add(orUnknown(r.getLanguage()));
         }
+        // 只回前 20 组，避免响应过大；按条数降序
+        List<Map<String, Object>> topCanonical = new java.util.ArrayList<>();
+        canonicalCount.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                .limit(20)
+                .forEach(e -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("canonicalKey", e.getKey());
+                    row.put("count", e.getValue());
+                    row.put("languages", canonicalLang.get(e.getKey()));
+                    topCanonical.add(row);
+                });
+
         result.put("total", all.size());
         result.put("byLanguage", byLanguage);
         result.put("byCategory", byCategory);
+        result.put("canonicalGroups", canonicalCount.size());
+        result.put("byCanonical", topCanonical);
         return result;
     }
 

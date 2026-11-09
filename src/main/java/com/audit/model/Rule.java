@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "rule", indexes = {
         @Index(name = "idx_rule_language", columnList = "language"),
-        @Index(name = "idx_rule_category", columnList = "category")
+        @Index(name = "idx_rule_category", columnList = "category"),
+        @Index(name = "idx_rule_canonical", columnList = "canonical_key")
 })
 public class Rule {
 
@@ -64,6 +65,17 @@ public class Rule {
     /** 可检测方式：pattern / dataflow / semantic / manual，manual 不进自动检测集 */
     @Column(length = 16)
     private String detectability;
+
+    /**
+     * 跨语言"同一类漏洞"的归一键，用于把 Java / Python / C 的同类规则串起来做对照。
+     *
+     * <p>取值规则：能归到具体 CWE 的用 CWE 号（如 {@code CWE-89}）；
+     * 归不到具体 CWE 的（{@code CWE-000}）用 {@code CAT-<category>}（如 {@code CAT-error-handling}）。
+     * 加一门新语言时，只要它的同类规则也落在这个键上，{@code GROUP BY canonical_key} 就能直接列出
+     * "一种漏洞、三种语言实现"，不需要跨表 join。
+     */
+    @Column(name = "canonical_key", length = 64)
+    private String canonicalKey;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();

@@ -3,6 +3,7 @@ package com.audit.service;
 import com.audit.model.Rule;
 import com.audit.repository.RuleRepository;
 import com.audit.util.JsonUtil;
+import com.audit.util.RuleKeys;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -81,6 +82,7 @@ public class RuleImportService {
             rule.setSourceDoc(text(node, "sourceDoc"));
             rule.setSourceRef(text(node, "sourceRef"));
             rule.setDetectability(orDefault(text(node, "detectability"), "pattern"));
+            rule.setCanonicalKey(RuleKeys.canonicalKey(rule.getCwe(), rule.getCategory()));
 
             ruleRepository.save(rule);
             imported++;

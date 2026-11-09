@@ -15,7 +15,7 @@
 
 本系统的做法是把两者接起来：
 
-1. **规则从示例里来**：给模型一批"正例 + 反例"代码，让它归纳成结构化规则（rule），存库版本化；
+1. **规则从规范里来**：把编码规范/手册（阿里 P3C）或现成规则库（SpotBugs / pylint / bandit）抽成结构化规则（rule），存库版本化；A 通道（LLM 抽取 + 证据回查）、B 通道（结构化直转）两条路；
 2. **审计按规则判**：把代码切片，连同"相关规则"一起交给模型，让它只回答"这条规则违没违反、在第几行"；
 3. **结果可校验**：行号必须在切片范围内、规则 id 必须在规则库里、JSON 必须能解析，否则丢弃重试。
 
@@ -126,6 +126,10 @@ graduation-audit/
 | severity | varchar(16) | HIGH / MEDIUM / LOW |
 | detection_hint | text | 让模型"看什么"的提示 |
 | evidence_quote | varchar(200) | 规则来源依据（防幻觉） |
+| source_doc | varchar(64) | 来源文档：alibaba-p3c / spotbugs / pylint / bandit |
+| source_ref | varchar(64) | 来源编号：条款号（1）或消息号（E0601 / SQL_NONCONSTANT_STRING_…） |
+| detectability | varchar(16) | pattern / semantic / manual，manual 不进自动检测集 |
+| canonical_key | varchar(64) | **跨语言归键**：`CWE-89` 或 `CAT-injection`，用来把同类漏洞在多种语言下的规则串成一组 |
 | created_at | datetime | |
 
 ### audit_task —— 审计任务
