@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# 第三方规则语料（版权原因不入库，本地生成）
+docs-source/

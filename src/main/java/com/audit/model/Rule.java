@@ -53,6 +53,18 @@ public class Rule {
     @Column(name = "evidence_quote", length = 200)
     private String evidenceQuote;
 
+    /** 规则来源文档：alibaba-p3c / pylint / bandit …（B 通道直转时也能追溯出处） */
+    @Column(name = "source_doc", length = 64)
+    private String sourceDoc;
+
+    /** 来源内部编号：条款号（如 B101、IDS00-J）或消息号（E0601） */
+    @Column(name = "source_ref", length = 64)
+    private String sourceRef;
+
+    /** 可检测方式：pattern / dataflow / semantic / manual，manual 不进自动检测集 */
+    @Column(length = 16)
+    private String detectability;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 }
