@@ -2,6 +2,7 @@ package com.audit.controller;
 
 import com.audit.service.AuditService;
 import com.audit.util.FileUtil;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -45,9 +48,45 @@ public class UploadController {
 
     private final AuditService auditService;
 
-    /** 上传文件落盘目录，相对工程根；yaml 里可覆盖。 */
+    /** 上传文件落盘目录；yaml 里可覆盖。相对路径按"进程当前工作目录"解析成绝对路径。 */
     @Value("${audit.upload-dir:uploads}")
     private String uploadDir;
+
+    /**
+     * 启动时就把上传目录解析成绝对路径并建好。
+     *
+     * <p>为什么要提前做：如果等到上传时才 {@code createDirectories}，一旦进程的工作目录
+     * 不对（例如从 System32 或只读目录启动 jar），报错信息会是一个看不懂的相对路径，
+     * 排查成本很高。这里启动即打印绝对路径与是否可写，出问题一眼能看出来。
+     */
+    private Path uploadRoot;
+
+    @PostConstruct
+    void initUploadDir() {
+        Path configured = Path.of(uploadDir).toAbsolutePath().normalize();
+        Path fallback = Path.of(System.getProperty("java.io.tmpdir"), "audit-uploads").toAbsolutePath().normalize();
+        if (ensureWritable(configured)) {
+            uploadRoot = configured;
+        } else {
+            ensureWritable(fallback);
+            uploadRoot = fallback;
+            log.warn("配置的上传目录不可写，已退回：{}", uploadRoot);
+        }
+        log.info("上传目录：{}（已实测可写）", uploadRoot);
+    }
+
+    /** 真写一个临时文件来验证可写性——Windows 上 {@code Files.isWritable} 对某些 ACL 会误报。 */
+    private boolean ensureWritable(Path dir) {
+        try {
+            Files.createDirectories(dir);
+            Path probe = Files.createTempFile(dir, ".write-probe-", ".tmp");
+            Files.deleteIfExists(probe);
+            return true;
+        } catch (IOException e) {
+            log.warn("上传目录不可写：{}（{}）", dir, e.getClass().getSimpleName() + ": " + e.getMessage());
+            return false;
+        }
+    }
 
     /**
      * 收文件并跑一次审计。
@@ -65,9 +104,12 @@ public class UploadController {
 
         Path saved;
         try {
-            saved = FileUtil.save(Path.of(uploadDir), fileName, file.getBytes());
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("文件保存失败：" + e.getMessage(), e);
+            saved = FileUtil.save(uploadRoot, fileName, file.getBytes());
+        } catch (IOException e) {
+            log.error("文件保存失败：dir={}, file={}", uploadRoot, fileName, e);
+            throw new IllegalStateException(
+                    "文件保存失败（" + e.getClass().getSimpleName() + "）：目录 " + uploadRoot
+                            + "，文件 " + fileName + "，原因：" + e.getMessage(), e);
         }
 
         Long taskId = auditService.createTask(fileName, language);
