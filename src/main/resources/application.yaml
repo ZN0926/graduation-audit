@@ -44,3 +44,7 @@ management:
 logging:
   level:
     com.audit: debug
+
+# 上传文件落盘目录（相对工程根），Git 不跟踪
+audit:
+  upload-dir: uploads

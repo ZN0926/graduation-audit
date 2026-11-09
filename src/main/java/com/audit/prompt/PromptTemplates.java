@@ -77,4 +77,66 @@ public final class PromptTemplates {
                 请按系统提示的 JSON Schema 输出规则数组。
                 """.formatted(language, section, clauseNo, level, text);
     }
+
+    /**
+     * 块 5 的系统提示词：判定"这段代码违反了清单里的哪几条规则"。
+     *
+     * <p>设计要点，每条都对应一次踩坑：
+     * <ul>
+     *   <li>只给 ruleId 清单、不给全库——这是降幻觉的第一道闸，模型没有机会引用"别处看到过的规则"；</li>
+     *   <li>行号必须落在给定区间——块是按函数切的，模型若按整个文件计行号，落地时会全被丢弃；</li>
+     *   <li>reason 必须有具体证据（哪个 API、哪个变量）——"存在风险"这种话没法写进报告，也没法答辩；</li>
+     *   <li>confidence 分档——0.8 以上可直接展示，0.5~0.7 标注"需人工复核"，0.4 以下基本是猜的。</li>
+     * </ul>
+     */
+    public static final String AUDIT_SYSTEM = """
+            你是代码安全审计引擎。你的判定必须严格基于下面给出的规则清单和代码，不得引入外部知识。
+
+            硬性约束：
+            1. 只输出一个 JSON 对象，不要 markdown 围栏、不要任何解释文字。
+            2. 只能引用【规则清单】里出现过的 ruleId，禁止编造、禁止引用清单外的规则。
+            3. startLine / endLine 必须落在【代码区间】之内（用区间内的绝对行号，不是从 1 开始重数）。
+            4. 逐条判定清单里的每条规则：violated=true 表示这段代码违反了它，false 或不输出表示未违反。
+            5. reason 必须给出具体证据（哪个 API、哪个变量、哪一行），不要写"存在风险""可能存在安全问题"这类空话。
+            6. fixSuggestion 要能直接照做，最多两句。
+            7. confidence 取 0~1：证据明确 ≥0.8；需要结合上下文推断 0.5~0.7；拿不准 ≤0.4 并在 reason 里注明"待人工确认"。
+
+            输出格式：
+            {"violations":[{"ruleId":"...","violated":true,"severity":"HIGH","startLine":12,"endLine":12,
+            "reason":"第 12 行把用户输入 name 直接拼进 SQL 字符串后交给 Statement.execute，构成 SQL 注入",
+            "fixSuggestion":"改用 PreparedStatement 与 ? 占位符绑定参数","confidence":0.9}],
+            "summary":"一句话概括这段代码的整体风险"}
+
+            只输出 JSON。
+            """;
+
+    /**
+     * 拼块 5 的用户提示词：语言 + 文件 + 行号区间 + 规则清单 + 代码。
+     *
+     * @param language   java / python
+     * @param filePath   文件路径（报告里要能追溯）
+     * @param startLine  本块的起始行（绝对行号，含）
+     * @param endLine    本块的结束行（绝对行号，含）
+     * @param code       本块代码
+     * @param rulesJson  本次允许引用的规则（精简字段后的 JSON 数组）
+     */
+    public static String buildAuditUser(String language, String filePath,
+                                        int startLine, int endLine, String code, String rulesJson) {
+        return """
+                语言：%s
+                文件：%s
+                代码区间：第 %d 行 ~ 第 %d 行（共 %d 行）
+
+                【规则清单】
+                %s
+
+                【代码】
+                ```%s
+                %s
+                ```
+
+                请逐条判定后输出 JSON 对象。
+                """.formatted(language, filePath, startLine, endLine, endLine - startLine + 1,
+                rulesJson, language, code);
+    }
 }
