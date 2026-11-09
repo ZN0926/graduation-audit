@@ -13,7 +13,8 @@ import java.time.LocalDateTime;
 @Table(name = "rule", indexes = {
         @Index(name = "idx_rule_language", columnList = "language"),
         @Index(name = "idx_rule_category", columnList = "category"),
-        @Index(name = "idx_rule_canonical", columnList = "canonical_key")
+        @Index(name = "idx_rule_canonical", columnList = "canonical_key"),
+        @Index(name = "idx_rule_lang_cat", columnList = "language,category")
 })
 public class Rule {
 
