@@ -52,11 +52,18 @@ class CodeParseServiceTest {
             assertChunkAlignedWithSource(file, chunk);
         }
 
-        // 第一块必须是 chat，且首行是它的签名
-        CodeChunk first = chunks.get(0);
-        assertEquals("chat", first.getNodeName());
-        assertTrue(first.getCode().split("\n", -1)[0].trim().startsWith("public String chat("),
-                "首块第一行应是方法签名，实际是：" + first.getCode().split("\n")[0].trim());
+        // 2026-11-09 起字段也单独成块（硬编码口令就写在方法外），
+        // 所以"第一块"不再一定是 chat；改为断言 chat 这块存在且首行是签名。
+        CodeChunk chat = chunks.stream()
+                .filter(c -> "chat".equals(c.getNodeName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("没切出 chat 方法块"));
+        assertTrue(chat.getCode().split("\n", -1)[0].trim().startsWith("public String chat("),
+                "chat 块第一行应是方法签名，实际是：" + chat.getCode().split("\n")[0].trim());
+
+        // 字段块确实被切出来了（MAX_ATTEMPTS 是 LlmService 的第一个字段）
+        assertTrue(chunks.stream().anyMatch(c -> "field".equals(c.getKind()) && "MAX_ATTEMPTS".equals(c.getNodeName())),
+                "应切出字段块 MAX_ATTEMPTS，实际块名：" + chunks.stream().map(CodeChunk::getNodeName).toList());
     }
 
     @Test

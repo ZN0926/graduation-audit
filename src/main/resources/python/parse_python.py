@@ -17,10 +17,22 @@
 
 【行号约定】统一 1-based、含端点；带装饰器时 startLine 取装饰器那一行，
 这样报告高亮能从 @app.route 开始，而不是从 def 开始。
+
+【模块级语句为什么也要报】
+很多真实漏洞不在函数里，而在模块顶层：
+    PASSWORD = "admin123"          # 硬编码凭证
+    subprocess.call(user_input, shell=True)   # 顶层执行
+只报函数/类的话，这些行永远进不了模型视野（块 5 验收时实测漏掉了顶层密码）。
+所以额外把"不属于任何函数/类的顶层语句"按 40 行一组报成 kind="module"，
+纯 import 行跳过（没有语义，只会浪费 token）。
 """
 import ast
 import json
 import sys
+
+# 模块级语句每块最多多少行：与 Java 侧 MAX_CHUNK_LINES(80) 取一半，
+# 因为顶层语句通常很碎，40 行已经能覆盖一整段初始化逻辑。
+MODULE_CHUNK_LINES = 40
 
 
 def _method_ids(tree):
@@ -46,6 +58,43 @@ def _end_line(node):
     return end if end else node.lineno
 
 
+def collect_module_level(tree):
+    """把"不属于任何函数/类"的顶层语句，按行号聚成若干块。
+
+    为什么不是一条语句一块：顶层语句常常是
+        cfg = load()
+        if cfg.debug:
+            print(cfg)
+    拆成三块会让模型看不到上下文，而 40 行一组刚好能装下一整段初始化逻辑。
+
+    为什么不收 import：import 行几乎不可能违规，收了只会白占 token。
+    """
+    stmts = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                             ast.Import, ast.ImportFrom)):
+            continue
+        stmts.append(node)
+    if not stmts:
+        return []
+
+    chunks = []
+    start = _start_line(stmts[0])
+    end = _end_line(stmts[0])
+    head = start
+    for node in stmts[1:]:
+        n_start, n_end = _start_line(node), _end_line(node)
+        # 超过阈值就结块；用 n_end - start 判断，保证块不会因为一条长语句超太多
+        if n_end - start + 1 > MODULE_CHUNK_LINES:
+            chunks.append({"nodeName": "模块级语句", "kind": "module",
+                           "startLine": start, "endLine": end})
+            start, head = n_start, n_start
+        end = max(end, n_end)
+    chunks.append({"nodeName": "模块级语句", "kind": "module",
+                   "startLine": start, "endLine": end})
+    return chunks
+
+
 def collect(tree):
     method_ids = _method_ids(tree)
     result = []
@@ -62,6 +111,7 @@ def collect(tree):
             "startLine": _start_line(node),
             "endLine": _end_line(node),
         })
+    result.extend(collect_module_level(tree))
     result.sort(key=lambda item: (item["startLine"], item["endLine"]))
     return result
 

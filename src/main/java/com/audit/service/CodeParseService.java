@@ -7,6 +7,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -141,6 +142,15 @@ public class CodeParseService {
             if (c.getMethods().isEmpty() && c.getConstructors().isEmpty()) {
                 chunks.addAll(toChunks(allLines, filePath, "java", c.getNameAsString(), "class", c));
             }
+        }
+        // 字段也要审：硬编码口令、写死的密钥、常量盐值都在方法外面，
+        // 只切方法的话 `private static final String PASSWORD = "..."` 永远进不了模型视野
+        // （块 5 复测时实测漏掉，见 03 文档"规则覆盖补强"）。
+        for (FieldDeclaration fd : cu.findAll(FieldDeclaration.class)) {
+            String name = fd.getVariables().isEmpty()
+                    ? "字段"
+                    : fd.getVariables().get(0).getNameAsString();
+            chunks.addAll(toChunks(allLines, filePath, "java", name, "field", fd));
         }
         chunks.sort((a, b) -> Integer.compare(a.getStartLine(), b.getStartLine()));
         return chunks;

@@ -178,12 +178,12 @@ public class RuleDistillService {
         Rule rule = new Rule();
         rule.setLanguage(language);
         rule.setTitle(text(node, "title"));
-        rule.setCategory(text(node, "category"));
-        rule.setCwe(text(node, "cwe").toUpperCase());
-        rule.setSeverity(text(node, "severity").toUpperCase());
+        rule.setCategory(normalizeCategory(text(node, "category")));
+        rule.setCwe(normalizeCwe(text(node, "cwe")));
+        rule.setSeverity(normalizeSeverity(text(node, "severity")));
         rule.setDescription(text(node, "description"));
         rule.setDetectionHint(text(node, "detectionHint"));
-        rule.setDetectability(text(node, "detectability"));
+        rule.setDetectability(normalizeDetectability(text(node, "detectability")));
         rule.setPositiveExample(text(node, "positiveExample"));
         rule.setNegativeExample(text(node, "negativeExample"));
         rule.setEvidenceQuote(text(node, "evidenceQuote"));
@@ -192,6 +192,87 @@ public class RuleDistillService {
         rule.setRuleId(buildRuleId(language, rule.getTitle(), rule.getCwe()));
         rule.setCanonicalKey(RuleKeys.canonicalKey(rule.getCwe(), rule.getCategory()));
         return rule;
+    }
+
+    // ------------------------------------------------------------ 字段归一
+    //
+    // 模型不是编译器：它会把 CWE 写成 "CWE-330（弱随机）"、"CWE330"、"330"，
+    // 把 severity 写成 "高"、"High"、"critical"，把 detectability 写成
+    // "pattern/dataflow"。硬校验会把一半好规则扔掉（实测 20 条候选丢 9 条），
+    // 所以先做"宽容归一"，再把明显不合法的交给 validate 拦下。
+
+    /** 从任意写法里抠出标准 CWE 编号；抠不出返回原串（交给 validate 拦）。 */
+    static String normalizeCwe(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String s = raw.trim().toUpperCase().replaceAll("\\s+", "");
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("CWE[-_:]?(\\d{1,4})")
+                .matcher(s.replace("－", "-"));
+        if (m.find()) {
+            return "CWE-" + String.format("%03d", Integer.parseInt(m.group(1)));
+        }
+        if (s.matches("\\d{1,4}")) {
+            return "CWE-" + String.format("%03d", Integer.parseInt(s));
+        }
+        return raw.trim().toUpperCase();
+    }
+
+    /** 中文/别名 → 枚举内的小写分类。 */
+    static String normalizeCategory(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = raw.trim().toLowerCase(java.util.Locale.ROOT).replace("_", "-");
+        return switch (s) {
+            case "注入", "sql注入", "command-injection", "sqli", "xss", "inject" -> "injection";
+            case "凭证", "密码", "硬编码", "credential", "credentials", "password" -> "secrets";
+            case "加密", "随机数", "cryptography", "random" -> "crypto";
+            case "路径", "path", "path-traversal" -> "path-traversal";
+            case "鉴权", "认证", "授权", "authorization", "authentication" -> "auth";
+            case "配置", "configuration", "config" -> "config";
+            case "日志", "logging" -> "logging";
+            case "错误处理", "异常处理", "error-handling", "exception" -> "error-handling";
+            case "命名", "naming" -> "naming";
+            case "风格", "style" -> "style";
+            case "反序列化", "deserialization" -> "deserialization";
+            default -> s;
+        };
+    }
+
+    static String normalizeSeverity(String raw) {
+        if (raw == null) {
+            return "MEDIUM";
+        }
+        String s = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (s) {
+            case "HIGH", "高", "高危", "CRITICAL", "严重" -> "HIGH";
+            case "LOW", "低", "低危" -> "LOW";
+            case "INFO", "提示", "信息" -> "INFO";
+            case "MEDIUM", "中", "中危" -> "MEDIUM";
+            default -> "MEDIUM";
+        };
+    }
+
+    static String normalizeDetectability(String raw) {
+        if (raw == null) {
+            return "semantic";
+        }
+        String s = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        if (s.contains("pattern") || s.contains("文本") || s.contains("正则")) {
+            return "pattern";
+        }
+        if (s.contains("dataflow") || s.contains("数据流") || s.contains("污点")) {
+            return "dataflow";
+        }
+        if (s.contains("manual") || s.contains("人工") || s.contains("不可")) {
+            return "manual";
+        }
+        if (s.contains("semantic") || s.contains("语义")) {
+            return "semantic";
+        }
+        return "semantic";
     }
 
     /**

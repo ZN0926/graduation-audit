@@ -57,6 +57,12 @@ public class AuditService {
     /** 单块最多带多少条规则给模型：多了 token 爆炸且判定质量下降。 */
     private static final int MAX_RULES_PER_CHUNK = 15;
 
+    /** 与关键词无关、但风险最高的类目：无论线索是什么都要带几条。 */
+    private static final List<String> GUARANTEED_CATEGORIES = List.of("secrets", "auth", "crypto");
+
+    /** 每个保底类目最多带几条，避免 15 条预算被一类吃光。 */
+    private static final int GUARANTEED_PER_CATEGORY = 3;
+
     /** user 提示词里代码与规则的长度上限，防止单块异常大。 */
     private static final int MAX_RULE_HINT_CHARS = 300;
 
@@ -216,30 +222,67 @@ public class AuditService {
     }
 
     /**
-     * 按代码块线索挑规则。
+     * 按代码块线索挑规则，附带"保底类目"。
      *
-     * <p>线索为空（代码里没命中任何关键词）时给"全部规则"，但受上限约束——
-     * 宁可多带几条也别漏判，这是"降低漏报"的取舍。
+     * <p>【为什么要保底】块 5 验收时踩到：硬编码密码那行（{@code PASSWORD = "..."}）
+     * 不含 sql/exec/crypto 等任何关键词 → 线索为空 → 退化成"规则库前 15 条"，
+     * 而 Java 的 196 条里 secrets 排在很后面，于是明明库里 10 条 secrets 规则，
+     * 一条都没被送到模型面前。
+     *
+     * <p>【现在的顺序】先放三个"与关键词无关、但风险最高"的类目各 3 条
+     * （secrets / auth / crypto），再用线索类目补满，最后用高危规则兜底。
+     * 15 条的预算不变，但高价值规则一定在名单里。
+     *
+     * <p>【例子】线索 {@code ["sql"]} → 名单 = secrets×3 + auth×3 + crypto×3 + injection×6；
+     * 线索为空 → 名单 = secrets×3 + auth×3 + crypto×3 + 其余高危规则填满。
      */
     private List<Rule> pickRules(List<Rule> all, CodeChunk chunk) {
-        List<String> hints = chunk.getCategoryHints();
-        if (hints == null || hints.isEmpty()) {
-            return cap(all);
-        }
         Set<String> wanted = new LinkedHashSet<>();
-        for (String hint : hints) {
-            List<String> cats = HINT_TO_CATEGORIES.get(hint.toLowerCase(Locale.ROOT));
-            if (cats != null) {
-                wanted.addAll(cats);
+        List<String> hints = chunk.getCategoryHints();
+        if (hints != null) {
+            for (String hint : hints) {
+                List<String> cats = HINT_TO_CATEGORIES.get(hint.toLowerCase(Locale.ROOT));
+                if (cats != null) {
+                    wanted.addAll(cats);
+                }
             }
         }
+
         List<Rule> picked = new ArrayList<>();
+        // 1) 保底：凭证 / 鉴权 / 加密，每类最多 3 条
+        for (String cat : GUARANTEED_CATEGORIES) {
+            int taken = 0;
+            for (Rule r : all) {
+                if (taken >= GUARANTEED_PER_CATEGORY) {
+                    break;
+                }
+                if (cat.equalsIgnoreCase(r.getCategory()) && !picked.contains(r)) {
+                    picked.add(r);
+                    taken++;
+                }
+            }
+        }
+        // 2) 线索类目补满
         for (Rule r : all) {
-            if (r.getCategory() != null && wanted.contains(r.getCategory().toLowerCase(Locale.ROOT))) {
+            if (picked.size() >= MAX_RULES_PER_CHUNK) {
+                break;
+            }
+            if (r.getCategory() != null
+                    && wanted.contains(r.getCategory().toLowerCase(Locale.ROOT))
+                    && !picked.contains(r)) {
                 picked.add(r);
             }
         }
-        return picked.isEmpty() ? cap(all) : cap(picked);
+        // 3) 还不够就用高危规则兜底（宁可多带几条，也别漏判）
+        for (Rule r : all) {
+            if (picked.size() >= MAX_RULES_PER_CHUNK) {
+                break;
+            }
+            if ("HIGH".equalsIgnoreCase(r.getSeverity()) && !picked.contains(r)) {
+                picked.add(r);
+            }
+        }
+        return cap(picked);
     }
 
     private static List<Rule> cap(List<Rule> list) {
