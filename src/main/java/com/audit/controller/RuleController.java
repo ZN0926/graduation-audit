@@ -2,6 +2,7 @@ package com.audit.controller;
 
 import com.audit.model.Rule;
 import com.audit.repository.RuleRepository;
+import com.audit.service.RuleDistillService;
 import com.audit.service.RuleImportService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,20 @@ import java.util.Map;
 public class RuleController {
 
     private final RuleImportService ruleImportService;
+    private final RuleDistillService ruleDistillService;
     private final RuleRepository ruleRepository;
+
+    /**
+     * A 通道：从规范文档抽规则。
+     *
+     * <p>例：{@code curl "http://localhost:8080/api/rules/distill?docPath=docs-source/java/alibaba-p3c.txt&language=java&maxChunks=5"}
+     */
+    @PostMapping("/distill")
+    public Map<String, Object> distill(@RequestParam String docPath,
+                                       @RequestParam String language,
+                                       @RequestParam(defaultValue = "5") int maxChunks) throws IOException {
+        return ruleDistillService.distill(docPath, language, maxChunks);
+    }
 
     @PostMapping("/import")
     public Map<String, Object> importRules(
