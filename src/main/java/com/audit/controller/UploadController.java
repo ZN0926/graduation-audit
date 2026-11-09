@@ -5,8 +5,6 @@ import com.audit.util.FileUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -83,12 +81,5 @@ public class UploadController {
         body.put("detail", "/api/audit/tasks/" + taskId + " 看进度，/api/audit/tasks/" + taskId + "/findings 看结果");
         log.info("上传完成：{} → 任务 {}（{}）", fileName, taskId, language);
         return body;
-    }
-
-    /** 只支持 .java / .py，其余给 400 而不是 500。 */
-    @org.springframework.web.bind.annotation.ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, Object>> badRequest(IllegalArgumentException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("error", e.getMessage()));
     }
 }
