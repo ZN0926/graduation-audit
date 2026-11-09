@@ -42,3 +42,9 @@ uploads/
 # 万一在根目录误跑 npm，也别把依赖提交进来
 node_modules/
 package-lock.json
+
+# 前端构建产物（npm run build 后拷进来用于单 jar 交付），属于生成物不入库
+src/main/resources/static/
+
+# 运行日志
+*.log
