@@ -3,8 +3,9 @@
 本科毕业设计项目。输入一段 Java 或 Python 源码，系统用"从示例中蒸馏出来的规则库"逐块交给大模型判定，
 输出一份带行号定位、违规解释和修复建议的审计报告。
 
-> 当前状态：**骨架阶段**。目录、类、接口路径已定，业务代码待补（每个文件里的 TODO 标了在哪个里程碑写）。
-> 详细施工顺序见 `docs/03-实现过程记录.md`。
+> 当前状态：**后端已完成**（M1–M7：切片 → 规则库 → 审计编排 → 报告 → 10 个接口 + CORS + 全局异常）。
+> 前端是独立仓库 `F:\毕业设计\audit-web`（Vue3），构建后 `dist` 拷进 `src/main/resources/static` 即为单 jar。
+> 施工与验收记录见 `docs/实现分块/`。
 
 ---
 
@@ -35,27 +36,102 @@
 
 ---
 
-## 3. 怎么跑起来
+## 3. 怎么跑起来（别人拿到这份代码的完整步骤）
 
-```powershell
-# 1. 确认 MySQL 在跑（服务是手动启动的，重启电脑后要手动开）
-net start MySQL80
+### 3.0 需要先准备
 
-# 2. 设置大模型 key（只影响当前窗口）
-$env:LLM_API_KEY = "sk-你的key"
+| 依赖 | 版本 | 用途 |
+|---|---|---|
+| JDK | 21 | 编译运行 |
+| Maven | 3.9+ | 构建 |
+| MySQL | 8.0 | 存规则、任务、结果 |
+| 大模型 key | 任一 OpenAI 兼容服务 | 规则抽取 + 代码判定（可以用 DeepSeek、千问 MaaS、OpenAI 等） |
 
-# 3. 启动
-cd F:\毕业设计\graduation-audit
-mvn spring-boot:run
+### 3.1 建库建账号
 
-# 4. 验证
-# 浏览器打开 http://localhost:8080/api/ping
+```sql
+CREATE DATABASE IF NOT EXISTS audit_db
+  DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+CREATE USER IF NOT EXISTS 'audit'@'localhost' IDENTIFIED BY 'Audit@2026';
+GRANT ALL PRIVILEGES ON audit_db.* TO 'audit'@'localhost';
+FLUSH PRIVILEGES;
 ```
 
-预期 `/api/ping` 返回 `{"status":"ok","db":"connected",...}`。
-DB 那一项是 `failed` 就说明 yaml 里的 url / 账号 / 库名有一个不对。
+> 想用自己的库名/账号：设环境变量 `DB_URL` / `DB_USER` / `DB_PASSWORD` 覆盖即可，**不用改 yaml**。
 
-> IDEA 里跑更省事：右上角运行按钮 → 运行配置 → 环境变量里加 `LLM_API_KEY=sk-...`。
+### 3.2 配 key（换成你自己的）
+
+```powershell
+# Windows 永久生效（新开终端生效）
+setx LLM_API_KEY "sk-你自己的key"
+```
+
+```bash
+# macOS / Linux
+export LLM_API_KEY="sk-你自己的key"
+```
+
+如果你用的不是默认网关/模型，再设两个（可选）：
+
+```powershell
+setx LLM_BASE_URL "https://api.deepseek.com"   # 只写到 /v1 之前的路径
+setx LLM_MODEL "deepseek-chat"
+```
+
+> 代码里没有任何明文 key，`application.yaml` 里只有 `${LLM_API_KEY:}` 占位符，**换 key 不用改代码**。
+
+### 3.3 启动
+
+```powershell
+cd graduation-audit
+mvn spring-boot:run
+```
+
+### 3.4 灌规则（关键一步，不做的话审出来永远是 0 条）
+
+规则库不随仓库分发（`docs-source/` 里的 pylint/SpotBugs/阿里手册语料有各自许可证）。
+仓库里只带了一份**自己写的 8 条基线规则**，先导入它让系统能出结果：
+
+```powershell
+curl -X POST "http://localhost:8080/api/rules/import?path=docs/seed/manual-rules.json"
+```
+
+返回 `{"total":8,"imported":8,...}` 即成功。确认：
+
+```powershell
+curl "http://localhost:8080/api/rules/stats"
+# {"total":8,"byLanguage":{"java":8}, ...}
+```
+
+想扩充到几百条，两条路（详见 `docs/实现分块/块4-规则蒸馏.md`）：
+
+- **B 通道**：从 pylint / SpotBugs / bandit 仓库解析成 JSON，再 `/api/rules/import`；
+- **A 通道**：把阿里手册之类的规范文本放进 `docs-source/`，调 `POST /api/rules/distill?docPath=...&language=java`，由模型按 Schema 抽取，`evidence_quote` 必须能在原文逐字搜到否则丢弃。
+
+### 3.5 验证
+
+浏览器打开 <http://localhost:8080/api/ping>，应返回：
+
+```json
+{"status":"ok","db":"connected","time":"..."}
+```
+
+- `db: connected` → 数据库通了；
+- 若 `failed` → 检查 MySQL 是否启动、`audit_db` 是否存在、账号密码是否对；
+- 启动日志里会打印 `上传目录：<绝对路径>（已实测可写）`，写不进会自动退回系统临时目录。
+
+### 3.6 用起来
+
+打开 <http://localhost:8080> 上传 `.java` / `.py` 文件，或者直接调接口：
+
+```powershell
+curl -X POST -F "file=@demo/BadDemo.java" http://localhost:8080/api/audit
+# 返回 {"taskId":1,...}，然后看 /api/audit/tasks/1 与 /api/report/1
+```
+
+接口全集见 `docs/接口说明.md`。
+
 
 ---
 

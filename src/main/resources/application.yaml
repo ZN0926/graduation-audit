@@ -6,9 +6,11 @@ spring:
     name: graduation-audit
 
   datasource:
-    url: 'jdbc:mysql://127.0.0.1:3306/audit_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true'
-    username: audit
-    password: Audit@2026
+    # 三项都可用环境变量覆盖，默认值用于本机开箱即跑；
+    # 换机器/换库时只需改环境变量，不必改这个文件。
+    url: '${DB_URL:jdbc:mysql://127.0.0.1:3306/audit_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}'
+    username: ${DB_USER:audit}
+    password: ${DB_PASSWORD:Audit@2026}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -29,9 +31,9 @@ llm:
   # 只写到域名+路径前缀，不带 /v1：代码里会自己拼 /v1/chat/completions
   # 千问 MaaS 兼容模式：https://maas.qianwenaiapi.com/compatible-mode
   # 换回 DeepSeek 就是 https://api.deepseek.com
-  base-url: https://maas.qianwenaiapi.com/compatible-mode
+  base-url: ${LLM_BASE_URL:https://maas.qianwenaiapi.com/compatible-mode}
   api-key: ${LLM_API_KEY:}
-  model: deepseek-v4.1-flash
+  model: ${LLM_MODEL:deepseek-v4.1-flash}
   timeout-seconds: 60
 
 # actuator 只暴露 health：/actuator/health 能看存活与数据源状态，其余端点（env/beans 等）一律不开
