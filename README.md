@@ -1,6 +1,6 @@
 # graduation-audit · 基于大语言模型的智能代码审计系统
 
-> 前端仓库：[audit-web](https://github.com/你的用户名/audit-web)（Vue 3 + Vite，端口 5173）
+> 前端仓库：[audit-web](https://github.com/ZN0926/audit-web)（Vue 3 + Vite，端口 5173）
 
 本科毕业设计项目。输入一段 Java 或 Python 源码，系统用"从示例中蒸馏出来的规则库"逐块交给大模型判定，
 输出一份带行号定位、违规解释和修复建议的审计报告。
